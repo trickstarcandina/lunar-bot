@@ -1,9 +1,17 @@
 import { Command } from '@sapphire/framework';
-import { ButtonBuilder, ButtonStyle, EmbedBuilder, type ActionRowBuilder, type Message } from 'discord.js';
-import { claimBoxes, claimDaily, ensureUser, openBox, type DB } from '../lib/db.js';
+import {
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+  type ActionRowBuilder,
+  type Message
+} from 'discord.js';
+import { claimBoxes, claimDaily, craft, ensureUser, getItems, openBox, type DB } from '../lib/db.js';
 import { cfg, isEventActive, todayVN } from '../lib/config.js';
-import { RARITY_COLOR, RARITY_LABEL, rollItem } from '../lib/items.js';
-import { buttonRow, embed, fmtDuration, ownerCollector } from '../lib/ui.js';
+import { GROUP_LABEL, ITEM_MAP, RARITIES, RARITY_COLOR, RARITY_LABEL, craftGain, rollItem, type Group, type Item } from '../lib/items.js';
+import { buttonRow, embed, fmtDuration, ownerCollector, selectRow, type AnySelectMenuBuilder } from '../lib/ui.js';
 
 export function closedEmbed(): EmbedBuilder {
   return embed('🌙 Event chưa mở', 'Event Trung Thu hiện không diễn ra. Hẹn gặp lại bạn nhé!');
@@ -43,7 +51,13 @@ export function openPayload(db: DB, userId: string) {
     .setStyle(ButtonStyle.Primary)
     .setDisabled(result.boxes <= 0);
 
-  return { embeds: [e], components: [buttonRow(again)] };
+  const toInv = new ButtonBuilder()
+    .setCustomId('open:inv')
+    .setLabel('Túi đồ')
+    .setEmoji('🧺')
+    .setStyle(ButtonStyle.Secondary);
+
+  return { embeds: [e], components: [buttonRow(again, toInv)] };
 }
 
 export class DailyCommand extends Command {
@@ -111,8 +125,215 @@ export class OpenCommand extends Command {
     const collector = ownerCollector(reply, userId);
 
     collector.on('collect', async (i) => {
-      if (!i.isButton() || i.customId !== 'open:again') return;
-      await i.update(openPayload(db, userId)).catch(() => {});
+      if (!i.isButton()) return;
+      if (i.customId === 'open:again') {
+        await i.update(openPayload(db, userId)).catch(() => {});
+      } else if (i.customId === 'open:inv') {
+        // ponytail: nút Túi đồ từ -open chỉ hiển thị lối tắt xem nhanh; các nút
+        // phân trang/craft trên embed này sẽ không phản hồi vì collector của
+        // OpenCommand không xử lý inv:*/craft:* — nâng cấp nếu cần luồng đầy đủ tại đây.
+        const name = message.guild?.members.cache.get(userId)?.displayName ?? message.author.username;
+        const payload = invPayload(db, userId, name, 0, true);
+        await i.update({ embeds: payload.embeds, components: payload.components }).catch(() => {});
+      }
+    });
+
+    return reply;
+  }
+}
+
+const PER_PAGE = 10;
+const CRAFT_GROUPS: Group[] = ['banh', 'den', 'khac'];
+
+interface Owned {
+  item: Item;
+  qty: number;
+}
+
+function ownedOf(db: DB, userId: string): Owned[] {
+  return getItems(db, userId)
+    .map((r) => ({ item: ITEM_MAP.get(r.item_id)!, qty: r.qty }))
+    .filter((x) => x.item !== undefined)
+    .sort(
+      (a, b) =>
+        RARITIES.indexOf(b.item.rarity) - RARITIES.indexOf(a.item.rarity) ||
+        a.item.name.localeCompare(b.item.name, 'vi')
+    );
+}
+
+/** Item rẻ nhất của mỗi nhóm mà người chơi đang có; undefined nếu nhóm đó trống. */
+function cheapestByGroup(owned: Owned[]): Partial<Record<Group, string>> {
+  const out: Partial<Record<Group, string>> = {};
+  for (const g of CRAFT_GROUPS) {
+    const pool = owned.filter((x) => x.item.group === g);
+    if (!pool.length) continue;
+    out[g] = pool.reduce((a, b) =>
+      RARITIES.indexOf(a.item.rarity) <= RARITIES.indexOf(b.item.rarity) ? a : b
+    ).item.id;
+  }
+  return out;
+}
+
+export function invPayload(db: DB, userId: string, name: string, page: number, self: boolean) {
+  const owned = ownedOf(db, userId);
+  const u = ensureUser(db, userId);
+  const maxPage = Math.max(1, Math.ceil(owned.length / PER_PAGE));
+  const p = Math.min(Math.max(0, page), maxPage - 1);
+  const slice = owned.slice(p * PER_PAGE, p * PER_PAGE + PER_PAGE);
+
+  const lines = slice.length
+    ? slice
+        .map((x) => `${RARITY_LABEL[x.item.rarity].split(' ')[0]} ${x.item.emoji} **${x.item.name}** ×${x.qty}`)
+        .join('\n')
+    : '_Túi trống. Gõ `-open` để mở hộp bánh._';
+
+  const canCraft = CRAFT_GROUPS.every((g) => owned.some((x) => x.item.group === g));
+
+  const e = embed(`🧺 Túi của ${name}`, lines).setFooter({
+    text: `${u.points} điểm · ${u.boxes} hộp · ${u.crafts} mâm cỗ · Trang ${p + 1}/${maxPage}`
+  });
+
+  if (!self) return { embeds: [e], components: [] as ActionRowBuilder<ButtonBuilder>[], page: p };
+
+  const buttons: ButtonBuilder[] = [
+    new ButtonBuilder().setCustomId('inv:prev').setEmoji('◀').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder()
+      .setCustomId('inv:next')
+      .setEmoji('▶')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(p >= maxPage - 1),
+    new ButtonBuilder()
+      .setCustomId('inv:craft')
+      .setLabel('Craft mâm cỗ')
+      .setEmoji('🥮')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!canCraft),
+    new ButtonBuilder()
+      .setCustomId('inv:open')
+      .setLabel('Mở hộp')
+      .setEmoji('🎁')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(u.boxes <= 0)
+  ];
+
+  return { embeds: [e], components: [buttonRow(...buttons)], page: p };
+}
+
+export function craftPickPayload(db: DB, userId: string, picked: Partial<Record<Group, string>>) {
+  const owned = ownedOf(db, userId);
+  const rows: ActionRowBuilder<AnySelectMenuBuilder>[] = [];
+
+  for (const g of CRAFT_GROUPS) {
+    const pool = owned.filter((x) => x.item.group === g).slice(0, 25);
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`craft:${g}`)
+      .setPlaceholder(`Chọn ${GROUP_LABEL[g]}`)
+      .addOptions(
+        pool.map((x) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${x.item.name} ×${x.qty}`)
+            .setDescription(RARITY_LABEL[x.item.rarity])
+            .setEmoji(x.item.emoji)
+            .setValue(x.item.id)
+            .setDefault(picked[g] === x.item.id)
+        )
+      );
+    rows.push(selectRow(menu));
+  }
+
+  const ids = CRAFT_GROUPS.map((g) => picked[g]).filter(Boolean) as string[];
+  const ready = ids.length === CRAFT_GROUPS.length;
+  const gain = ready ? craftGain(ids, cfg().rarity_points) : 0;
+
+  const e = embed(
+    '🥮 Craft Mâm cỗ Trung Thu',
+    [
+      'Chọn một món mỗi nhóm rồi bấm **Xác nhận**.',
+      '',
+      ...CRAFT_GROUPS.map((g) => {
+        const id = picked[g];
+        const item = id ? ITEM_MAP.get(id) : undefined;
+        return `**${GROUP_LABEL[g]}:** ${item ? `${item.emoji} ${item.name}` : '_chưa chọn_'}`;
+      }),
+      '',
+      ready ? `Nhận được **+${gain}** điểm.` : '_Chọn đủ ba nhóm để craft._'
+    ].join('\n')
+  );
+
+  const confirmRow = buttonRow(
+    new ButtonBuilder()
+      .setCustomId('craft:go')
+      .setLabel('Xác nhận')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success)
+      .setDisabled(!ready),
+    new ButtonBuilder().setCustomId('craft:cancel').setLabel('Huỷ').setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [e], components: [...rows, confirmRow] };
+}
+
+export class InvCommand extends Command {
+  public constructor(context: Command.LoaderContext, options: Command.Options) {
+    super(context, { ...options, name: 'inv', aliases: ['tui', 'bag'], description: 'Xem túi đồ' });
+  }
+
+  public override async messageRun(message: Message) {
+    const db = this.container.db;
+    const target = message.mentions.users.first() ?? message.author;
+    const self = target.id === message.author.id;
+    const name = message.guild?.members.cache.get(target.id)?.displayName ?? target.username;
+
+    let page = 0;
+    let picked: Partial<Record<Group, string>> = {};
+    const reply = await message.reply(invPayload(db, target.id, name, page, self));
+    if (!self) return reply;
+
+    const collector = ownerCollector(reply, message.author.id);
+
+    collector.on('collect', async (i) => {
+      const userId = message.author.id;
+
+      if (i.isButton() && i.customId === 'inv:prev') {
+        page -= 1;
+        return void (await i.update(invPayload(db, userId, name, page, true)).catch(() => {}));
+      }
+      if (i.isButton() && i.customId === 'inv:next') {
+        page += 1;
+        return void (await i.update(invPayload(db, userId, name, page, true)).catch(() => {}));
+      }
+      if (i.isButton() && i.customId === 'inv:open') {
+        return void (await i.update(openPayload(db, userId)).catch(() => {}));
+      }
+      if (i.isButton() && i.customId === 'inv:craft') {
+        picked = cheapestByGroup(ownedOf(db, userId));
+        return void (await i.update(craftPickPayload(db, userId, picked)).catch(() => {}));
+      }
+      if (i.isStringSelectMenu() && i.customId.startsWith('craft:')) {
+        const g = i.customId.slice('craft:'.length) as Group;
+        picked[g] = i.values[0];
+        return void (await i.update(craftPickPayload(db, userId, picked)).catch(() => {}));
+      }
+      if (i.isButton() && i.customId === 'craft:cancel') {
+        return void (await i.update(invPayload(db, userId, name, page, true)).catch(() => {}));
+      }
+      if (i.isButton() && i.customId === 'craft:go') {
+        if (!isEventActive(cfg())) {
+          return void (await i.update({ embeds: [closedEmbed()], components: [] }).catch(() => {}));
+        }
+        const ids = CRAFT_GROUPS.map((g) => picked[g]).filter(Boolean) as string[];
+        if (ids.length !== CRAFT_GROUPS.length) return;
+        const gain = craftGain(ids, cfg().rarity_points);
+        const ok = craft(db, userId, ids, gain);
+        picked = {};
+        const e = ok
+          ? embed(
+              '🥮 Craft thành công',
+              `Bạn bày được một **Mâm cỗ Trung Thu** và nhận **+${gain}** điểm!\nTổng điểm: **${ensureUser(db, userId).points}**`
+            )
+          : embed('🥮 Craft thất bại', 'Nguyên liệu không còn đủ. Mở thêm hộp rồi thử lại nhé.');
+        return void (await i.update({ embeds: [e], components: [] }).catch(() => {}));
+      }
     });
 
     return reply;

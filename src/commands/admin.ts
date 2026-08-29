@@ -49,6 +49,13 @@ function fmtTime(epoch: number | null): string {
   return new Date(epoch * 1000).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 
+/** Nghịch đảo của parseVNTime: epoch giây → 'YYYY-MM-DD HH:mm' giờ VN, để prefill modal round-trip được. */
+function fmtVNTime(epoch: number): string {
+  const d = new Date((epoch + 7 * 3600) * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
 function cfgPayload() {
   const c = cfg();
   const e = embed('⚙️ Cấu hình event Trung Thu')
@@ -160,7 +167,7 @@ export class CfgCommand extends Command {
           .setCustomId(choice === 'channels' ? 'cfg:channels' : 'cfg:log')
           .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
           .setPlaceholder(choice === 'channels' ? 'Chọn các kênh được tính chat' : 'Chọn kênh log')
-          .setMinValues(choice === 'channels' ? 0 : 1)
+          .setMinValues(0)
           .setMaxValues(choice === 'channels' ? 25 : 1);
         return void (await i
           .update({
@@ -177,8 +184,8 @@ export class CfgCommand extends Command {
 
       if (choice === 'time') {
         const submit = await askModal(i, 'cfg:modal:time', 'Thời gian event (giờ VN)', [
-          textInput('start', 'Bắt đầu — YYYY-MM-DD HH:mm (trống = bỏ)', c.event_start ? fmtTime(c.event_start) : ''),
-          textInput('end', 'Kết thúc — YYYY-MM-DD HH:mm (trống = bỏ)', c.event_end ? fmtTime(c.event_end) : '')
+          textInput('start', 'Bắt đầu — YYYY-MM-DD HH:mm (trống = bỏ)', c.event_start !== null ? fmtVNTime(c.event_start) : ''),
+          textInput('end', 'Kết thúc — YYYY-MM-DD HH:mm (trống = bỏ)', c.event_end !== null ? fmtVNTime(c.event_end) : '')
         ]);
         if (!submit || !submit.isFromMessage()) return;
         const start = parseVNTime(submit.fields.getTextInputValue('start'));

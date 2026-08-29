@@ -31,7 +31,7 @@ import { embed } from '../lib/ui.js';
 
 export class CommandErrorLogger extends SapphireListener<typeof FrameworkEvents.MessageCommandError> {
   public constructor(context: SapphireListener.LoaderContext, options: SapphireListener.Options) {
-    super(context, { ...options, event: FrameworkEvents.MessageCommandError });
+    super(context, { ...options, name: 'commandError', event: FrameworkEvents.MessageCommandError });
   }
 
   public override async run(error: unknown, payload: MessageCommandErrorPayload): Promise<void> {

@@ -1,9 +1,9 @@
 import 'dotenv/config';
 import { SapphireClient, LogLevel, container } from '@sapphire/framework';
 import { ChannelType, GatewayIntentBits } from 'discord.js';
-import { openDb, resetVoiceSessions, flushVoice, type DB } from './lib/db.js';
-import { loadConfig } from './lib/config.js';
-import { syncVoiceChannel } from './listeners/voice.js';
+import { openDb, resetVoiceSessions, flushVoice, closeVoice, openVoiceIds, type DB } from './lib/db.js';
+import { cfg, isEventActive, loadConfig } from './lib/config.js';
+import { syncVoiceChannel, voiceEligible } from './listeners/voice.js';
 
 declare module '@sapphire/pieces' {
   interface Container {
@@ -49,6 +49,40 @@ client.once('clientReady', async () => {
   container.logger.info(`Sẵn sàng với ${container.owners.length} owner.`);
 });
 
-setInterval(() => flushVoice(db, Math.floor(Date.now() / 1000)), 60_000);
+function currentlyEligibleVoiceIds(): Set<string> {
+  const ids = new Set<string>();
+  for (const guild of client.guilds.cache.values()) {
+    for (const ch of guild.channels.cache.values()) {
+      if (!ch || (ch.type !== ChannelType.GuildVoice && ch.type !== ChannelType.GuildStageVoice)) continue;
+      for (const member of ch.members.values()) {
+        if (voiceEligible(ch, member)) ids.add(member.id);
+      }
+    }
+  }
+  return ids;
+}
+
+function voiceTick(): void {
+  const now = Math.floor(Date.now() / 1000);
+  if (!isEventActive(cfg())) {
+    resetVoiceSessions(db);
+    return;
+  }
+  const eligible = currentlyEligibleVoiceIds();
+  for (const id of openVoiceIds(db)) {
+    if (!eligible.has(id)) closeVoice(db, id, now);
+  }
+  flushVoice(db, now);
+}
+
+setInterval(voiceTick, 60_000);
+
+function shutdown(): void {
+  flushVoice(db, Math.floor(Date.now() / 1000));
+  db.close();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 await client.login(process.env.DISCORD_TOKEN);

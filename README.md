@@ -8,11 +8,11 @@ mở hộp ra item, craft mâm cỗ, xếp hạng.
 ```bash
 npm install
 cp .env.example .env    # điền DISCORD_TOKEN và OWNERS
-npm start
+npm start                # chạy trực tiếp qua tsx, không cần build
 ```
 
-Trong Discord Developer Portal, bật các intent sau: **Guilds**, **Guild Messages**, **Guild Voice States**.
-**Message Content Intent** là bắt buộc để đọc nội dung tin nhắn.
+Trong Discord Developer Portal, bật 4 intent sau: **Guilds**, **Guild Messages**, **Guild Voice States**,
+và **Message Content Intent** (bắt buộc, để đọc nội dung tin nhắn).
 
 ## Lệnh
 

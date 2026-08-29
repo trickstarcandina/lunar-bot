@@ -2,8 +2,9 @@
   "name": "lunar-bot",
   "private": true,
   "type": "module",
+  "main": "src/index.ts",
   "scripts": {
-    "start": "node --import tsx src/index.ts",
+    "start": "tsx src/index.ts",
     "test": "node --import tsx src/selftest.ts"
   },
   "dependencies": {

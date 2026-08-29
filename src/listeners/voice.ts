@@ -1,20 +1,27 @@
 import { Listener } from '@sapphire/framework';
-import { Events, type VoiceBasedChannel, type VoiceState } from 'discord.js';
+import { Events, type GuildMember, type VoiceBasedChannel, type VoiceState } from 'discord.js';
 import { closeVoice, openVoice, type DB } from '../lib/db.js';
+
+/**
+ * Điều kiện được tính giờ voice: kênh có từ 2 người thật trở lên, bản thân không deaf.
+ * ponytail: chống AFK ở mức này là đủ; muốn chặt hơn (mute lâu, không camera)
+ * thì thêm điều kiện ngay trong hàm này, mọi nơi gọi đều hưởng.
+ */
+export function voiceEligible(channel: VoiceBasedChannel, member: GuildMember): boolean {
+  if (member.user.bot) return false;
+  const humans = channel.members.filter((m) => !m.user.bot);
+  if (humans.size < 2) return false;
+  return !member.voice.selfDeaf && !member.voice.deaf;
+}
 
 /**
  * Đồng bộ trạng thái một voice channel: ai đủ điều kiện thì mở session,
  * ai không đủ thì đóng và cộng dồn thời gian.
- * Điều kiện: kênh có từ 2 người thật trở lên, bản thân không deaf.
- * ponytail: chống AFK ở mức này là đủ; muốn chặt hơn (mute lâu, không camera)
- * thì thêm điều kiện ngay trong hàm này, mọi nơi gọi đều hưởng.
  */
 export function syncVoiceChannel(db: DB, channel: VoiceBasedChannel, now: number): void {
   const humans = channel.members.filter((m) => !m.user.bot);
-  const enoughPeople = humans.size >= 2;
   for (const member of humans.values()) {
-    const eligible = enoughPeople && !member.voice.selfDeaf && !member.voice.deaf;
-    if (eligible) openVoice(db, member.id, now);
+    if (voiceEligible(channel, member)) openVoice(db, member.id, now);
     else closeVoice(db, member.id, now);
   }
 }

@@ -142,11 +142,10 @@ export class OpenCommand extends Command {
       if (i.customId === 'open:again') {
         await i.update(openPayload(db, userId)).catch(() => {});
       } else if (i.customId === 'open:inv') {
-        // ponytail: nút Túi đồ từ -open chỉ hiển thị lối tắt xem nhanh; các nút
-        // phân trang/craft trên embed này sẽ không phản hồi vì collector của
-        // OpenCommand không xử lý inv:*/craft:* — nâng cấp nếu cần luồng đầy đủ tại đây.
+        // ponytail: nút Túi đồ từ -open chỉ là lối tắt xem nhanh (self=false, không nút);
+        // OpenCommand's collector không xử lý inv:*/craft:* — dùng -inv cho luồng đầy đủ.
         const name = message.guild?.members.cache.get(userId)?.displayName ?? message.author.username;
-        const payload = invPayload(db, userId, name, 0, true);
+        const payload = invPayload(db, userId, name, 0, false);
         await i.update({ embeds: payload.embeds, components: payload.components }).catch(() => {});
       }
     });
@@ -323,7 +322,7 @@ export class InvCommand extends Command {
 
   public override async messageRun(message: Message) {
     const db = this.container.db;
-    const target = message.mentions.users.first() ?? message.author;
+    const target = message.mentions.parsedUsers.first() ?? message.author;
     const self = target.id === message.author.id;
     const name = message.guild?.members.cache.get(target.id)?.displayName ?? target.username;
 
@@ -394,12 +393,12 @@ async function topPayload(db: DB, message: Message, key: TopKey, page: number) {
   const p = Math.min(Math.max(0, page), maxPage - 1);
   const rows = topPage(db, key, p * PER_PAGE, PER_PAGE);
 
-  const lines: string[] = [];
-  for (const [idx, row] of rows.entries()) {
+  const names = await Promise.all(rows.map((row) => displayName(message, row.user_id)));
+  const lines = rows.map((row, idx) => {
     const rank = p * PER_PAGE + idx + 1;
     const badge = rank <= 3 ? MEDALS[rank - 1] : `**${rank}.**`;
-    lines.push(`${badge} ${await displayName(message, row.user_id)} · ${meta.fmt(row.value)}`);
-  }
+    return `${badge} ${names[idx]} · ${meta.fmt(row.value)}`;
+  });
 
   const myRank = rankOf(db, key, message.author.id);
   const myValue = valueOf(db, key, message.author.id);
@@ -461,7 +460,8 @@ export class TopCommand extends Command {
         page = 0;
       } else return;
 
-      await i.update(await topPayload(db, message, key, page)).catch(() => {});
+      await i.deferUpdate().catch(() => {});
+      await i.editReply(await topPayload(db, message, key, page)).catch(() => {});
     });
 
     return reply;

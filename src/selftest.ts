@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf, valueOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, setConfigMany, isEventActive, todayVN } from './lib/config.js';
 import { craftConfirmPayload, openPayload } from './commands/event.js';
 
 const filter = process.argv[2] ?? '';
-const cases: Array<[string, () => void]> = [];
-const t = (name: string, fn: () => void) => cases.push([name, fn]);
+const cases: Array<[string, () => void | Promise<void>]> = [];
+const t = (name: string, fn: () => void | Promise<void>) => cases.push([name, fn]);
 const mem = () => openDb(':memory:');
 
 t('ensureUser tạo user với giá trị mặc định', () => {
@@ -339,13 +342,59 @@ t('valueOf trả đúng giá trị người chơi bị hoà, bất kể user_id 
   assert.equal(valueOf(db, 'points', 'khong-ton-tai'), 0);
 });
 
+t('Sapphire nạp đủ 7 lệnh và 2 listener của bot (C1/C2 regression)', () => {
+  // ponytail: `npm test` tự nó chạy dưới `node --import tsx`, cách này không bật
+  // loader .ts của Sapphire (đúng là nguyên nhân C1) — còn production chạy qua CLI
+  // `tsx`, cái *có* bật. Import `@sapphire/framework` ngay tại đây (kể cả dynamic)
+  // là quá trễ: framework đã bị các module khác require từ đầu file, cờ env đọc
+  // process._preload_modules chỉ tính một lần lúc module đó nạp lần đầu. Nên bài
+  // test spawn đúng CLI `tsx` production dùng, một tiến trình con sạch, để soi
+  // đường load piece thật — chứ không giả lập trong tiến trình test hiện tại.
+  // Đặt trong repo (không phải /tmp) để probe resolve được node_modules bằng cách đi lên thư mục cha.
+  const dir = mkdtempSync(join(process.cwd(), '.sapphire-probe-'));
+  const probe = join(dir, 'probe.ts');
+  try {
+    writeFileSync(
+      probe,
+      `
+      import { SapphireClient } from '@sapphire/framework';
+      (async () => {
+        const client = new SapphireClient({ defaultPrefix: '-', intents: [] });
+        client.stores.registerPath(client.options.baseUserDirectory);
+        await client.stores.get('commands').loadAll();
+        await client.stores.get('listeners').loadAll();
+        console.log(JSON.stringify({
+          commands: [...client.stores.get('commands').keys()],
+          listeners: [...client.stores.get('listeners').keys()]
+        }));
+      })();
+      `
+    );
+    const tsxBin = join(process.cwd(), 'node_modules', '.bin', 'tsx');
+    const result = spawnSync(tsxBin, [probe], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.equal(result.status, 0, `probe thoát lỗi: ${result.stderr}`);
+    const { commands, listeners } = JSON.parse(result.stdout.trim().split('\n').pop()!) as {
+      commands: string[];
+      listeners: string[];
+    };
+    for (const name of ['daily', 'box', 'open', 'inv', 'top', 'cfg', 'addbox']) {
+      assert.ok(commands.includes(name), `thiếu lệnh ${name}`);
+    }
+    for (const name of ['message', 'commandError']) {
+      assert.ok(listeners.includes(name), `thiếu listener ${name}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)
 
 let fail = 0;
 for (const [name, fn] of cases) {
   if (filter && !name.includes(filter)) continue;
   try {
-    fn();
+    await fn();
     console.log(`  ok  ${name}`);
   } catch (e) {
     fail++;

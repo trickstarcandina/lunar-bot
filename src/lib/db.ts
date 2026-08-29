@@ -148,3 +148,77 @@ export function resetVoiceSessions(db: DB): void {
 export function openVoiceIds(db: DB): string[] {
   return (db.prepare('SELECT user_id FROM voice_open').all() as { user_id: string }[]).map((r) => r.user_id);
 }
+
+export function openBox(
+  db: DB,
+  userId: string,
+  itemId: string,
+  points: number
+): { boxes: number; points: number } | null {
+  return db.transaction(() => {
+    const u = ensureUser(db, userId);
+    if (u.boxes <= 0) return null;
+    db.prepare('UPDATE users SET boxes = boxes - 1, points = points + ? WHERE user_id = ?').run(points, userId);
+    db.prepare(
+      `INSERT INTO items (user_id, item_id, qty) VALUES (?, ?, 1)
+       ON CONFLICT(user_id, item_id) DO UPDATE SET qty = qty + 1`
+    ).run(userId, itemId);
+    return { boxes: u.boxes - 1, points: u.points + points };
+  })();
+}
+
+export function getItems(db: DB, userId: string): { item_id: string; qty: number }[] {
+  return db.prepare('SELECT item_id, qty FROM items WHERE user_id = ? AND qty > 0 ORDER BY item_id')
+    .all(userId) as { item_id: string; qty: number }[];
+}
+
+export function craft(db: DB, userId: string, itemIds: string[], gain: number): boolean {
+  return db.transaction(() => {
+    const need = new Map<string, number>();
+    for (const id of itemIds) need.set(id, (need.get(id) ?? 0) + 1);
+    for (const [id, n] of need) {
+      const row = db.prepare('SELECT qty FROM items WHERE user_id = ? AND item_id = ?').get(userId, id) as
+        | { qty: number }
+        | undefined;
+      if (!row || row.qty < n) return false;
+    }
+    for (const [id, n] of need) {
+      db.prepare('UPDATE items SET qty = qty - ? WHERE user_id = ? AND item_id = ?').run(n, userId, id);
+    }
+    db.prepare('DELETE FROM items WHERE user_id = ? AND qty <= 0').run(userId);
+    db.prepare('UPDATE users SET points = points + ?, crafts = crafts + 1 WHERE user_id = ?').run(gain, userId);
+    return true;
+  })();
+}
+
+const TOP_COLUMNS = {
+  points: 'points',
+  msg: 'msg_count',
+  voice: 'voice_sec',
+  crafts: 'crafts'
+} as const;
+
+export type TopKey = keyof typeof TOP_COLUMNS;
+
+export function topPage(db: DB, key: TopKey, offset: number, limit = 10): { user_id: string; value: number }[] {
+  const col = TOP_COLUMNS[key];
+  return db
+    .prepare(
+      `SELECT user_id, ${col} AS value FROM users WHERE ${col} > 0
+       ORDER BY ${col} DESC, user_id ASC LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset) as { user_id: string; value: number }[];
+}
+
+export function topCount(db: DB, key: TopKey): number {
+  const col = TOP_COLUMNS[key];
+  return (db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${col} > 0`).get() as { n: number }).n;
+}
+
+export function rankOf(db: DB, key: TopKey, userId: string): number {
+  const col = TOP_COLUMNS[key];
+  const me = db.prepare(`SELECT ${col} AS v FROM users WHERE user_id = ?`).get(userId) as { v: number } | undefined;
+  if (!me || me.v <= 0) return 0;
+  const above = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${col} > ?`).get(me.v) as { n: number };
+  return above.n + 1;
+}

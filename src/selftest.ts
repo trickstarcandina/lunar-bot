@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds } from './lib/db.js';
+import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
 
@@ -195,6 +195,80 @@ t('flushVoice cộng cho mọi session đang mở', () => {
   flushVoice(db, 1090);
   assert.equal(ensureUser(db, 'u1').voice_sec, 90);
   assert.equal(ensureUser(db, 'u2').voice_sec, 60);
+});
+
+t('openBox trừ hộp, cộng điểm và cộng item', () => {
+  const db = mem();
+  addBoxes(db, 'u1', 2);
+  const r1 = openBox(db, 'u1', 'banh_thap_cam', 10);
+  assert.deepEqual(r1, { boxes: 1, points: 10 });
+  const r2 = openBox(db, 'u1', 'banh_thap_cam', 10);
+  assert.deepEqual(r2, { boxes: 0, points: 20 });
+  assert.deepEqual(getItems(db, 'u1'), [{ item_id: 'banh_thap_cam', qty: 2 }]);
+});
+
+t('openBox trả null khi hết hộp và không đổi gì', () => {
+  const db = mem();
+  ensureUser(db, 'u1');
+  assert.equal(openBox(db, 'u1', 'tra_sen', 10), null);
+  assert.equal(ensureUser(db, 'u1').points, 0);
+  assert.deepEqual(getItems(db, 'u1'), []);
+});
+
+t('craft trừ đúng 3 item, cộng điểm và tăng số lần craft', () => {
+  const db = mem();
+  addBoxes(db, 'u1', 3);
+  openBox(db, 'u1', 'banh_thap_cam', 10);
+  openBox(db, 'u1', 'den_ong_sao', 30);
+  openBox(db, 'u1', 'tra_sen', 10);
+  const ok = craft(db, 'u1', ['banh_thap_cam', 'den_ong_sao', 'tra_sen'], 100);
+  assert.equal(ok, true);
+  const u = ensureUser(db, 'u1');
+  assert.equal(u.points, 150); // 50 từ mở hộp + 100 từ craft
+  assert.equal(u.crafts, 1);
+  assert.deepEqual(getItems(db, 'u1'), []);
+});
+
+t('craft thiếu nguyên liệu thì thất bại và không đổi gì', () => {
+  const db = mem();
+  addBoxes(db, 'u1', 2);
+  openBox(db, 'u1', 'banh_thap_cam', 10);
+  openBox(db, 'u1', 'den_ong_sao', 30);
+  const ok = craft(db, 'u1', ['banh_thap_cam', 'den_ong_sao', 'tra_sen'], 100);
+  assert.equal(ok, false);
+  const u = ensureUser(db, 'u1');
+  assert.equal(u.points, 40);
+  assert.equal(u.crafts, 0);
+  assert.equal(getItems(db, 'u1').length, 2);
+});
+
+t('xếp hạng sắp đúng thứ tự, đếm đúng và tính đúng hạng cá nhân', () => {
+  const db = mem();
+  addBoxes(db, 'a', 1);
+  addBoxes(db, 'b', 1);
+  addBoxes(db, 'c', 1);
+  openBox(db, 'a', 'tho_ngoc', 700);
+  openBox(db, 'b', 'den_keo_quan', 80);
+  openBox(db, 'c', 'tra_sen', 10);
+  ensureUser(db, 'd'); // 0 điểm, không lên bảng
+  const page = topPage(db, 'points', 0, 10);
+  assert.deepEqual(page.map((r) => r.user_id), ['a', 'b', 'c']);
+  assert.equal(page[0]!.value, 700);
+  assert.equal(topCount(db, 'points'), 3);
+  assert.equal(rankOf(db, 'points', 'b'), 2);
+  assert.equal(rankOf(db, 'points', 'd'), 0);
+  assert.equal(rankOf(db, 'points', 'khong-ton-tai'), 0);
+});
+
+t('xếp hạng phân trang bằng offset', () => {
+  const db = mem();
+  for (let i = 0; i < 25; i++) {
+    addBoxes(db, `u${i}`, 1);
+    openBox(db, `u${i}`, 'tra_sen', i + 1);
+  }
+  assert.equal(topPage(db, 'points', 0, 10).length, 10);
+  assert.equal(topPage(db, 'points', 20, 10).length, 5);
+  assert.equal(topPage(db, 'points', 0, 10)[0]!.value, 25);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

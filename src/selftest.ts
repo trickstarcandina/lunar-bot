@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached } from './lib/db.js';
+import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
 
@@ -152,6 +152,49 @@ t('addBoxes không cho hộp xuống dưới 0', () => {
   assert.equal(addBoxes(db, 'u1', 5), 5);
   assert.equal(addBoxes(db, 'u1', -100), 0);
   assert.equal(addBoxes(db, 'u1', 2), 2);
+});
+
+t('voice cộng đúng số giây qua chuỗi join, flush, leave', () => {
+  const db = mem();
+  openVoice(db, 'u1', 1000);
+  flushVoice(db, 1060); // +60
+  flushVoice(db, 1120); // +60
+  closeVoice(db, 'u1', 1150); // +30
+  assert.equal(ensureUser(db, 'u1').voice_sec, 150);
+  assert.deepEqual(openVoiceIds(db), []);
+});
+
+t('voice join hai lần không tạo session trùng', () => {
+  const db = mem();
+  openVoice(db, 'u1', 1000);
+  openVoice(db, 'u1', 1500); // bỏ qua, giữ mốc 1000
+  closeVoice(db, 'u1', 1100);
+  assert.equal(ensureUser(db, 'u1').voice_sec, 100);
+});
+
+t('closeVoice khi không có session mở thì không cộng gì', () => {
+  const db = mem();
+  ensureUser(db, 'u1');
+  closeVoice(db, 'u1', 9999);
+  assert.equal(ensureUser(db, 'u1').voice_sec, 0);
+});
+
+t('resetVoiceSessions xoá hết session đang mở', () => {
+  const db = mem();
+  openVoice(db, 'u1', 1000);
+  openVoice(db, 'u2', 1000);
+  assert.equal(openVoiceIds(db).length, 2);
+  resetVoiceSessions(db);
+  assert.deepEqual(openVoiceIds(db), []);
+});
+
+t('flushVoice cộng cho mọi session đang mở', () => {
+  const db = mem();
+  openVoice(db, 'u1', 1000);
+  openVoice(db, 'u2', 1030);
+  flushVoice(db, 1090);
+  assert.equal(ensureUser(db, 'u1').voice_sec, 90);
+  assert.equal(ensureUser(db, 'u2').voice_sec, 60);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

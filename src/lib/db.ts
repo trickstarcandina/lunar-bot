@@ -109,3 +109,42 @@ export function addBoxes(db: DB, userId: string, delta: number): number {
     return next;
   })();
 }
+
+export function openVoice(db: DB, userId: string, now: number): void {
+  ensureUser(db, userId);
+  db.prepare('INSERT OR IGNORE INTO voice_open (user_id, joined_at) VALUES (?, ?)').run(userId, now);
+}
+
+export function closeVoice(db: DB, userId: string, now: number): void {
+  db.transaction(() => {
+    const row = db.prepare('SELECT joined_at FROM voice_open WHERE user_id = ?').get(userId) as
+      | { joined_at: number }
+      | undefined;
+    if (!row) return;
+    db.prepare('UPDATE users SET voice_sec = voice_sec + ? WHERE user_id = ?')
+      .run(Math.max(0, now - row.joined_at), userId);
+    db.prepare('DELETE FROM voice_open WHERE user_id = ?').run(userId);
+  })();
+}
+
+export function flushVoice(db: DB, now: number): void {
+  db.transaction(() => {
+    const rows = db.prepare('SELECT user_id, joined_at FROM voice_open').all() as {
+      user_id: string;
+      joined_at: number;
+    }[];
+    for (const r of rows) {
+      db.prepare('UPDATE users SET voice_sec = voice_sec + ? WHERE user_id = ?')
+        .run(Math.max(0, now - r.joined_at), r.user_id);
+    }
+    db.prepare('UPDATE voice_open SET joined_at = ?').run(now);
+  })();
+}
+
+export function resetVoiceSessions(db: DB): void {
+  db.prepare('DELETE FROM voice_open').run();
+}
+
+export function openVoiceIds(db: DB): string[] {
+  return (db.prepare('SELECT user_id FROM voice_open').all() as { user_id: string }[]).map((r) => r.user_id);
+}

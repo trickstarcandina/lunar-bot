@@ -44,9 +44,10 @@ src/listeners/message.ts  đếm tin nhắn
 src/listeners/voice.ts    đếm thời gian voice + flush định kỳ
 src/commands/event.ts     daily, box, open, inv, craft, top
 src/commands/admin.ts     cfg, addbox
+src/selftest.ts           self-check chạy bằng assert (mục 16)
 ```
 
-Chín file. Không thêm file cho tới khi có nhu cầu thật.
+Mười file. Không thêm file cho tới khi có nhu cầu thật.
 
 ## 4. Cơ sở dữ liệu
 
@@ -175,7 +176,7 @@ nhận trùng.
 
 ## 9. Item
 
-13 item, 5 bậc rarity, 3 nhóm dùng cho craft.
+14 item, 5 bậc rarity, 3 nhóm dùng cho craft: `banh` (5), `den` (2), `khac` (7).
 
 | id | Tên | Rarity | Nhóm |
 |---|---|---|---|

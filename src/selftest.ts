@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { openDb, ensureUser, addMsg } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
+import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
 
 const filter = process.argv[2] ?? '';
 const cases: Array<[string, () => void]> = [];
@@ -58,6 +59,38 @@ t('rollItem luôn trả item có thật', () => {
 t('craftGain bằng 2 lần tổng điểm', () => {
   assert.equal(craftGain(['banh_thap_cam', 'den_ong_sao', 'tra_sen'], P), 2 * (10 + 30 + 10));
   assert.equal(craftGain(['banh_vi_ca', 'den_keo_quan', 'tho_ngoc'], P), 2 * (200 + 80 + 700));
+});
+
+t('loadConfig trả mặc định khi settings rỗng', () => {
+  const db = mem();
+  const c = loadConfig(db);
+  assert.deepEqual(c.msg_tiers, [15, 30, 60, 120, 200]);
+  assert.deepEqual(c.channels, []);
+  assert.equal(c.daily_boxes, 3);
+});
+
+t('setConfig ghi xuống DB và nạp lại được', () => {
+  const db = mem();
+  loadConfig(db);
+  setConfig(db, 'channels', ['111', '222']);
+  assert.deepEqual(cfg().channels, ['111', '222']);
+  assert.deepEqual(loadConfig(db).channels, ['111', '222']);
+});
+
+t('isEventActive theo cờ bật tắt và mốc thời gian', () => {
+  const base = { ...DEFAULTS };
+  assert.equal(isEventActive({ ...base }, 1000), true);
+  assert.equal(isEventActive({ ...base, enabled: false }, 1000), false);
+  assert.equal(isEventActive({ ...base, event_start: 2000 }, 1000), false);
+  assert.equal(isEventActive({ ...base, event_start: 500 }, 1000), true);
+  assert.equal(isEventActive({ ...base, event_end: 900 }, 1000), false);
+  assert.equal(isEventActive({ ...base, event_end: 1100 }, 1000), true);
+});
+
+t('todayVN trả YYYY-MM-DD theo giờ Việt Nam', () => {
+  // 2026-08-29 18:00 UTC = 2026-08-30 01:00 giờ VN
+  assert.equal(todayVN(new Date('2026-08-29T18:00:00Z')), '2026-08-30');
+  assert.equal(todayVN(new Date('2026-08-29T10:00:00Z')), '2026-08-29');
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

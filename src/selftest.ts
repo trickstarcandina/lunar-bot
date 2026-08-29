@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { openDb, ensureUser, addMsg } from './lib/db.js';
+import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 
 const filter = process.argv[2] ?? '';
 const cases: Array<[string, () => void]> = [];
@@ -22,6 +23,41 @@ t('ensureUser gọi hai lần không tạo trùng', () => {
   ensureUser(db, 'u1');
   addMsg(db, 'u1');
   assert.equal(ensureUser(db, 'u1').msg_count, 1);
+});
+
+const W: Record<Rarity, number> = { common: 50, uncommon: 27, rare: 15, epic: 6, legendary: 2 };
+const P: Record<Rarity, number> = { common: 10, uncommon: 30, rare: 80, epic: 200, legendary: 700 };
+
+t('bảng item có đủ 14 item và 3 nhóm', () => {
+  assert.equal(ITEMS.length, 14);
+  assert.equal(ITEMS.filter((i) => i.group === 'banh').length, 5);
+  assert.equal(ITEMS.filter((i) => i.group === 'den').length, 2);
+  assert.equal(ITEMS.filter((i) => i.group === 'khac').length, 7);
+  assert.equal(new Set(ITEMS.map((i) => i.id)).size, 14);
+});
+
+t('rollRarity phân bố đúng trọng số', () => {
+  const n = 100_000;
+  const count: Record<string, number> = {};
+  for (let i = 0; i < n; i++) {
+    const r = rollRarity(W);
+    count[r] = (count[r] ?? 0) + 1;
+  }
+  const total = Object.values(W).reduce((a, b) => a + b, 0);
+  for (const [r, w] of Object.entries(W)) {
+    const expect = w / total;
+    const got = (count[r] ?? 0) / n;
+    assert.ok(Math.abs(got - expect) < 0.02, `${r}: mong ${expect}, được ${got}`);
+  }
+});
+
+t('rollItem luôn trả item có thật', () => {
+  for (let i = 0; i < 1000; i++) assert.ok(ITEM_MAP.has(rollItem(W).id));
+});
+
+t('craftGain bằng 2 lần tổng điểm', () => {
+  assert.equal(craftGain(['banh_thap_cam', 'den_ong_sao', 'tra_sen'], P), 2 * (10 + 30 + 10));
+  assert.equal(craftGain(['banh_vi_ca', 'den_keo_quan', 'tho_ngoc'], P), 2 * (200 + 80 + 700));
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

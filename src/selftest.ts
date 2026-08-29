@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { openDb, ensureUser, addMsg } from './lib/db.js';
+import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
 
@@ -91,6 +91,67 @@ t('todayVN trả YYYY-MM-DD theo giờ Việt Nam', () => {
   // 2026-08-29 18:00 UTC = 2026-08-30 01:00 giờ VN
   assert.equal(todayVN(new Date('2026-08-29T18:00:00Z')), '2026-08-30');
   assert.equal(todayVN(new Date('2026-08-29T10:00:00Z')), '2026-08-29');
+});
+
+const MT = [15, 30, 60, 120, 200];
+const VT = [30, 60, 120, 240, 480];
+
+t('tiersReached đếm số mốc đã vượt', () => {
+  assert.equal(tiersReached(0, MT), 0);
+  assert.equal(tiersReached(14, MT), 0);
+  assert.equal(tiersReached(15, MT), 1);
+  assert.equal(tiersReached(119, MT), 3);
+  assert.equal(tiersReached(9999, MT), 5);
+});
+
+t('claimBoxes gọi hai lần không phát trùng hộp', () => {
+  const db = mem();
+  for (let i = 0; i < 20; i++) addMsg(db, 'u1');
+  const first = claimBoxes(db, 'u1', MT, VT);
+  assert.equal(first.gained, 1);
+  assert.equal(first.boxes, 1);
+  const second = claimBoxes(db, 'u1', MT, VT);
+  assert.equal(second.gained, 0);
+  assert.equal(second.boxes, 1);
+});
+
+t('claimBoxes vượt nhiều mốc cùng lúc phát đủ hộp còn thiếu', () => {
+  const db = mem();
+  for (let i = 0; i < 125; i++) addMsg(db, 'u1');
+  const r = claimBoxes(db, 'u1', MT, VT);
+  assert.equal(r.gained, 4); // vượt 15, 30, 60, 120
+  assert.equal(r.boxes, 4);
+});
+
+t('claimBoxes tính mốc voice theo phút, độc lập với mốc chat', () => {
+  const db = mem();
+  for (let i = 0; i < 20; i++) addMsg(db, 'u1');
+  addVoiceSec(db, 'u1', 65 * 60); // 65 phút, vượt mốc 30 và 60
+  const r = claimBoxes(db, 'u1', MT, VT);
+  assert.equal(r.gained, 3); // 1 từ chat + 2 từ voice
+  assert.equal(r.boxes, 3);
+  addVoiceSec(db, 'u1', 60 * 60); // tổng 125 phút, vượt thêm mốc 120
+  assert.equal(claimBoxes(db, 'u1', MT, VT).gained, 1);
+});
+
+t('claimDaily lần hai trong cùng ngày bị từ chối', () => {
+  const db = mem();
+  const first = claimDaily(db, 'u1', '2026-08-29', 3);
+  assert.equal(first.ok, true);
+  assert.equal(first.boxes, 3);
+  const second = claimDaily(db, 'u1', '2026-08-29', 3);
+  assert.equal(second.ok, false);
+  assert.equal(second.boxes, 3);
+  const nextDay = claimDaily(db, 'u1', '2026-08-30', 3);
+  assert.equal(nextDay.ok, true);
+  assert.equal(nextDay.boxes, 6);
+});
+
+t('addBoxes không cho hộp xuống dưới 0', () => {
+  const db = mem();
+  assert.equal(addBoxes(db, 'u1', 5), 5);
+  assert.equal(addBoxes(db, 'u1', -100), 0);
+  assert.equal(addBoxes(db, 'u1', 2), 2);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

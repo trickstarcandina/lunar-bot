@@ -65,3 +65,47 @@ export function addMsg(db: DB, userId: string): void {
   ensureUser(db, userId);
   db.prepare('UPDATE users SET msg_count = msg_count + 1 WHERE user_id = ?').run(userId);
 }
+
+export function addVoiceSec(db: DB, userId: string, sec: number): void {
+  ensureUser(db, userId);
+  db.prepare('UPDATE users SET voice_sec = voice_sec + ? WHERE user_id = ?').run(sec, userId);
+}
+
+export function tiersReached(value: number, tiers: number[]): number {
+  return tiers.filter((x) => value >= x).length;
+}
+
+export function claimBoxes(
+  db: DB,
+  userId: string,
+  msgTiers: number[],
+  voiceTiers: number[]
+): { gained: number; boxes: number; msgCount: number; voiceSec: number } {
+  return db.transaction(() => {
+    const u = ensureUser(db, userId);
+    const wantMsg = Math.max(u.msg_tier, tiersReached(u.msg_count, msgTiers));
+    const wantVoice = Math.max(u.voice_tier, tiersReached(Math.floor(u.voice_sec / 60), voiceTiers));
+    const gained = wantMsg - u.msg_tier + (wantVoice - u.voice_tier);
+    db.prepare('UPDATE users SET boxes = boxes + ?, msg_tier = ?, voice_tier = ? WHERE user_id = ?')
+      .run(gained, wantMsg, wantVoice, userId);
+    return { gained, boxes: u.boxes + gained, msgCount: u.msg_count, voiceSec: u.voice_sec };
+  })();
+}
+
+export function claimDaily(db: DB, userId: string, today: string, amount: number): { ok: boolean; boxes: number } {
+  return db.transaction(() => {
+    const u = ensureUser(db, userId);
+    if (u.last_daily === today) return { ok: false, boxes: u.boxes };
+    db.prepare('UPDATE users SET boxes = boxes + ?, last_daily = ? WHERE user_id = ?').run(amount, today, userId);
+    return { ok: true, boxes: u.boxes + amount };
+  })();
+}
+
+export function addBoxes(db: DB, userId: string, delta: number): number {
+  return db.transaction(() => {
+    const u = ensureUser(db, userId);
+    const next = Math.max(0, u.boxes + delta);
+    db.prepare('UPDATE users SET boxes = ? WHERE user_id = ?').run(next, userId);
+    return next;
+  })();
+}

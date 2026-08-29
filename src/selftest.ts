@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
-import { openPayload } from './commands/event.js';
+import { craftConfirmPayload, openPayload } from './commands/event.js';
 
 const filter = process.argv[2] ?? '';
 const cases: Array<[string, () => void]> = [];
@@ -286,6 +286,30 @@ t('openPayload chặn khi event đóng, không tốn hộp', () => {
   setConfig(db, 'enabled', true);
   openPayload(db, 'u1');
   assert.equal(ensureUser(db, 'u1').boxes, 2);
+});
+
+t('craftConfirmPayload chặn khi event đóng, không tốn nguyên liệu', () => {
+  const db = mem();
+  loadConfig(db);
+  addBoxes(db, 'u1', 3);
+  openBox(db, 'u1', 'banh_thap_cam', 10);
+  openBox(db, 'u1', 'den_ong_sao', 30);
+  openBox(db, 'u1', 'tra_sen', 10);
+  const ids = ['banh_thap_cam', 'den_ong_sao', 'tra_sen'];
+
+  setConfig(db, 'enabled', false);
+  craftConfirmPayload(db, 'u1', ids);
+  assert.deepEqual(
+    getItems(db, 'u1').map((r) => r.item_id),
+    ['banh_thap_cam', 'den_ong_sao', 'tra_sen']
+  );
+  assert.equal(ensureUser(db, 'u1').points, 50);
+  assert.equal(ensureUser(db, 'u1').crafts, 0);
+
+  setConfig(db, 'enabled', true);
+  craftConfirmPayload(db, 'u1', ids);
+  assert.deepEqual(getItems(db, 'u1'), []);
+  assert.equal(ensureUser(db, 'u1').crafts, 1);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

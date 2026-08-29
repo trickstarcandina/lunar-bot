@@ -227,8 +227,9 @@ export function craftPickPayload(db: DB, userId: string, picked: Partial<Record<
     const pool = owned.filter((x) => x.item.group === g).slice(0, 25);
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`craft:${g}`)
-      .setPlaceholder(`Chọn ${GROUP_LABEL[g]}`)
-      .addOptions(
+      .setPlaceholder(`Chọn ${GROUP_LABEL[g]}`);
+    if (pool.length) {
+      menu.addOptions(
         pool.map((x) =>
           new StringSelectMenuOptionBuilder()
             .setLabel(`${x.item.name} ×${x.qty}`)
@@ -238,6 +239,14 @@ export function craftPickPayload(db: DB, userId: string, picked: Partial<Record<
             .setDefault(picked[g] === x.item.id)
         )
       );
+    } else {
+      // discord.js yêu cầu 1-25 lựa chọn; nhóm rỗng thì hiện một lựa chọn giả bị khoá.
+      menu
+        .addOptions(
+          new StringSelectMenuOptionBuilder().setLabel(`Không có ${GROUP_LABEL[g].toLowerCase()}`).setValue('none')
+        )
+        .setDisabled(true);
+    }
     rows.push(selectRow(menu));
   }
 
@@ -271,6 +280,27 @@ export function craftPickPayload(db: DB, userId: string, picked: Partial<Record<
   );
 
   return { embeds: [e], components: [...rows, confirmRow] };
+}
+
+export function craftConfirmPayload(db: DB, userId: string, ids: string[]) {
+  if (!isEventActive(cfg())) {
+    return { embeds: [closedEmbed()], components: [] as ActionRowBuilder<ButtonBuilder>[] };
+  }
+  if (ids.length !== CRAFT_GROUPS.length) {
+    return {
+      embeds: [embed('🥮 Craft thất bại', 'Chưa chọn đủ ba nhóm nguyên liệu.')],
+      components: [] as ActionRowBuilder<ButtonBuilder>[]
+    };
+  }
+  const gain = craftGain(ids, cfg().rarity_points);
+  const ok = craft(db, userId, ids, gain);
+  const e = ok
+    ? embed(
+        '🥮 Craft thành công',
+        `Bạn bày được một **Mâm cỗ Trung Thu** và nhận **+${gain}** điểm!\nTổng điểm: **${ensureUser(db, userId).points}**`
+      )
+    : embed('🥮 Craft thất bại', 'Nguyên liệu không còn đủ. Mở thêm hộp rồi thử lại nhé.');
+  return { embeds: [e], components: [] as ActionRowBuilder<ButtonBuilder>[] };
 }
 
 export class InvCommand extends Command {
@@ -318,21 +348,9 @@ export class InvCommand extends Command {
         return void (await i.update(invPayload(db, userId, name, page, true)).catch(() => {}));
       }
       if (i.isButton() && i.customId === 'craft:go') {
-        if (!isEventActive(cfg())) {
-          return void (await i.update({ embeds: [closedEmbed()], components: [] }).catch(() => {}));
-        }
         const ids = CRAFT_GROUPS.map((g) => picked[g]).filter(Boolean) as string[];
-        if (ids.length !== CRAFT_GROUPS.length) return;
-        const gain = craftGain(ids, cfg().rarity_points);
-        const ok = craft(db, userId, ids, gain);
         picked = {};
-        const e = ok
-          ? embed(
-              '🥮 Craft thành công',
-              `Bạn bày được một **Mâm cỗ Trung Thu** và nhận **+${gain}** điểm!\nTổng điểm: **${ensureUser(db, userId).points}**`
-            )
-          : embed('🥮 Craft thất bại', 'Nguyên liệu không còn đủ. Mở thêm hộp rồi thử lại nhé.');
-        return void (await i.update({ embeds: [e], components: [] }).catch(() => {}));
+        return void (await i.update(craftConfirmPayload(db, userId, ids)).catch(() => {}));
       }
     });
 

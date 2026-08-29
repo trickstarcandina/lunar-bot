@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf } from './lib/db.js';
+import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf, valueOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
 import { craftConfirmPayload, openPayload } from './commands/event.js';
@@ -310,6 +310,20 @@ t('craftConfirmPayload chặn khi event đóng, không tốn nguyên liệu', ()
   craftConfirmPayload(db, 'u1', ids);
   assert.deepEqual(getItems(db, 'u1'), []);
   assert.equal(ensureUser(db, 'u1').crafts, 1);
+});
+
+t('valueOf trả đúng giá trị người chơi bị hoà, bất kể user_id sắp ở đâu', () => {
+  const db = mem();
+  addBoxes(db, 'aaa', 1);
+  addBoxes(db, 'zzz', 1);
+  addBoxes(db, 'mmm', 1);
+  openBox(db, 'aaa', 'tra_sen', 500);
+  openBox(db, 'zzz', 'tra_sen', 500);
+  openBox(db, 'mmm', 'tho_ngoc', 700);
+  // aaa và zzz hoà điểm; topPage sắp aaa trước zzz theo user_id ASC nên offset
+  // theo rankOf sẽ trỏ nhầm sang hàng của aaa nếu tra theo offset thay vì theo id.
+  assert.equal(valueOf(db, 'points', 'zzz'), 500);
+  assert.equal(valueOf(db, 'points', 'khong-ton-tai'), 0);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

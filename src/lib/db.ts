@@ -222,3 +222,9 @@ export function rankOf(db: DB, key: TopKey, userId: string): number {
   const above = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ${col} > ?`).get(me.v) as { n: number };
   return above.n + 1;
 }
+
+export function valueOf(db: DB, key: TopKey, userId: string): number {
+  const col = TOP_COLUMNS[key];
+  const row = db.prepare(`SELECT ${col} AS v FROM users WHERE user_id = ?`).get(userId) as { v: number } | undefined;
+  return row?.v ?? 0;
+}

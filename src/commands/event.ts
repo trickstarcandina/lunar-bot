@@ -18,6 +18,7 @@ import {
   rankOf,
   topCount,
   topPage,
+  valueOf,
   type DB,
   type TopKey
 } from '../lib/db.js';
@@ -401,10 +402,10 @@ async function topPayload(db: DB, message: Message, key: TopKey, page: number) {
   }
 
   const myRank = rankOf(db, key, message.author.id);
-  const myValue = topPage(db, key, Math.max(0, myRank - 1), 1).find((r) => r.user_id === message.author.id);
+  const myValue = valueOf(db, key, message.author.id);
   const footer =
     myRank > 0
-      ? `Bạn: #${myRank} · ${meta.fmt(myValue?.value ?? 0)}   |   Trang ${p + 1}/${maxPage}`
+      ? `Bạn: #${myRank} · ${meta.fmt(myValue)}   |   Trang ${p + 1}/${maxPage}`
       : `Bạn chưa có trên bảng này   |   Trang ${p + 1}/${maxPage}`;
 
   const e = embed(

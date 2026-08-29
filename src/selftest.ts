@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
 import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
+import { openPayload } from './commands/event.js';
 
 const filter = process.argv[2] ?? '';
 const cases: Array<[string, () => void]> = [];
@@ -269,6 +270,22 @@ t('xếp hạng phân trang bằng offset', () => {
   assert.equal(topPage(db, 'points', 0, 10).length, 10);
   assert.equal(topPage(db, 'points', 20, 10).length, 5);
   assert.equal(topPage(db, 'points', 0, 10)[0]!.value, 25);
+});
+
+t('openPayload chặn khi event đóng, không tốn hộp', () => {
+  const db = mem();
+  loadConfig(db);
+  addBoxes(db, 'u1', 3);
+
+  setConfig(db, 'enabled', false);
+  const closed = openPayload(db, 'u1');
+  assert.equal(ensureUser(db, 'u1').boxes, 3);
+  assert.equal(ensureUser(db, 'u1').points, 0);
+  assert.deepEqual(closed.components, []);
+
+  setConfig(db, 'enabled', true);
+  openPayload(db, 'u1');
+  assert.equal(ensureUser(db, 'u1').boxes, 2);
 });
 
 // --- runner --- (mọi test mới chèn PHÍA TRÊN dòng này)

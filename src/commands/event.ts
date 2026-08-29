@@ -11,6 +11,9 @@ export function closedEmbed(): EmbedBuilder {
 
 export function openPayload(db: DB, userId: string) {
   const c = cfg();
+  if (!isEventActive(c)) {
+    return { embeds: [closedEmbed()], components: [] as ActionRowBuilder<ButtonBuilder>[] };
+  }
   const item = rollItem(c.rarity_weights);
   const gain = c.rarity_points[item.rarity];
   const result = openBox(db, userId, item.id, gain);

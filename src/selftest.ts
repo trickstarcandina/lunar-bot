@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf, valueOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
-import { DEFAULTS, loadConfig, cfg, setConfig, isEventActive, todayVN } from './lib/config.js';
+import { DEFAULTS, loadConfig, cfg, setConfig, setConfigMany, isEventActive, todayVN } from './lib/config.js';
 import { craftConfirmPayload, openPayload } from './commands/event.js';
 
 const filter = process.argv[2] ?? '';
@@ -76,6 +76,19 @@ t('setConfig ghi xuống DB và nạp lại được', () => {
   setConfig(db, 'channels', ['111', '222']);
   assert.deepEqual(cfg().channels, ['111', '222']);
   assert.deepEqual(loadConfig(db).channels, ['111', '222']);
+});
+
+t('setConfigMany ghi nhiều khoá trong một transaction, cache và DB khớp nhau', () => {
+  const db = mem();
+  loadConfig(db);
+  setConfigMany(db, { daily_boxes: 7, min_msg_len: 12, msg_cooldown: 30 });
+  assert.equal(cfg().daily_boxes, 7);
+  assert.equal(cfg().min_msg_len, 12);
+  assert.equal(cfg().msg_cooldown, 30);
+  const reloaded = loadConfig(db);
+  assert.equal(reloaded.daily_boxes, 7);
+  assert.equal(reloaded.min_msg_len, 12);
+  assert.equal(reloaded.msg_cooldown, 30);
 });
 
 t('isEventActive theo cờ bật tắt và mốc thời gian', () => {

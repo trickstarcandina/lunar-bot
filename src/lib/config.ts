@@ -61,6 +61,19 @@ export function setConfig<K extends keyof Config>(db: DB, key: K, value: Config[
   cfg()[key] = value;
 }
 
+export function setConfigMany(db: DB, patch: Partial<Config>): void {
+  const entries = Object.entries(patch) as [keyof Config, Config[keyof Config]][];
+  db.transaction(() => {
+    for (const [key, value] of entries) {
+      db.prepare(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+      ).run(key, JSON.stringify(value));
+    }
+  })();
+  const c = cfg();
+  for (const [key, value] of entries) (c as unknown as Record<string, unknown>)[key] = value;
+}
+
 export function isEventActive(c: Config, now = Math.floor(Date.now() / 1000)): boolean {
   if (!c.enabled) return false;
   if (c.event_start !== null && now < c.event_start) return false;

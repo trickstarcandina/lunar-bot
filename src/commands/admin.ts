@@ -12,11 +12,10 @@ import {
   TextInputBuilder,
   TextInputStyle,
   type Message,
-  type MessageComponentInteraction,
-  type TextBasedChannel
+  type MessageComponentInteraction
 } from 'discord.js';
 import { addBoxes, ensureUser } from '../lib/db.js';
-import { cfg, setConfig, type Config } from '../lib/config.js';
+import { cfg, setConfig, setConfigMany, type Config } from '../lib/config.js';
 import { RARITIES, type Rarity } from '../lib/items.js';
 import { buttonRow, embed, isOwner, ownerCollector, selectRow, type AnySelectMenuBuilder } from '../lib/ui.js';
 
@@ -190,8 +189,7 @@ export class CfgCommand extends Command {
         if (start !== null && end !== null && end <= start) {
           return void (await submit.reply({ content: 'Thời gian kết thúc phải sau thời gian bắt đầu.', flags: MessageFlags.Ephemeral }));
         }
-        setConfig(db, 'event_start', start);
-        setConfig(db, 'event_end', end);
+        setConfigMany(db, { event_start: start, event_end: end });
         return void (await submit.update(cfgPayload()).catch(() => {}));
       }
 
@@ -249,9 +247,7 @@ export class CfgCommand extends Command {
           }
           values.push(n);
         }
-        setConfig(db, 'daily_boxes', values[0]!);
-        setConfig(db, 'min_msg_len', values[1]!);
-        setConfig(db, 'msg_cooldown', values[2]!);
+        setConfigMany(db, { daily_boxes: values[0]!, min_msg_len: values[1]!, msg_cooldown: values[2]! });
         return void (await submit.update(cfgPayload()).catch(() => {}));
       }
     });
@@ -291,8 +287,8 @@ export class AddBoxCommand extends Command {
     const logId = cfg().log_channel;
     if (logId) {
       const ch = await message.client.channels.fetch(logId).catch(() => null);
-      if (ch?.isTextBased() && 'send' in ch) {
-        await (ch as TextBasedChannel & { send: Function })
+      if (ch?.isSendable()) {
+        await ch
           .send({
             embeds: [
               embed(

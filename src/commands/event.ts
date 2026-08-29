@@ -8,7 +8,19 @@ import {
   type ActionRowBuilder,
   type Message
 } from 'discord.js';
-import { claimBoxes, claimDaily, craft, ensureUser, getItems, openBox, type DB } from '../lib/db.js';
+import {
+  claimBoxes,
+  claimDaily,
+  craft,
+  ensureUser,
+  getItems,
+  openBox,
+  rankOf,
+  topCount,
+  topPage,
+  type DB,
+  type TopKey
+} from '../lib/db.js';
 import { cfg, isEventActive, todayVN } from '../lib/config.js';
 import { GROUP_LABEL, ITEM_MAP, RARITIES, RARITY_COLOR, RARITY_LABEL, craftGain, rollItem, type Group, type Item } from '../lib/items.js';
 import { buttonRow, embed, fmtDuration, ownerCollector, selectRow, type AnySelectMenuBuilder } from '../lib/ui.js';
@@ -352,6 +364,103 @@ export class InvCommand extends Command {
         picked = {};
         return void (await i.update(craftConfirmPayload(db, userId, ids)).catch(() => {}));
       }
+    });
+
+    return reply;
+  }
+}
+
+const TOP_META: Record<TopKey, { label: string; emoji: string; fmt: (v: number) => string }> = {
+  points: { label: 'Điểm', emoji: '🏆', fmt: (v) => `${v.toLocaleString('vi-VN')} điểm` },
+  msg: { label: 'Chat', emoji: '💬', fmt: (v) => `${v.toLocaleString('vi-VN')} tin nhắn` },
+  voice: { label: 'Voice', emoji: '🔊', fmt: (v) => fmtDuration(v) },
+  crafts: { label: 'Mâm cỗ', emoji: '🥮', fmt: (v) => `${v} mâm` }
+};
+
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+async function displayName(message: Message, id: string): Promise<string> {
+  const cached = message.guild?.members.cache.get(id);
+  if (cached) return cached.displayName;
+  const user = await message.client.users.fetch(id).catch(() => null);
+  return user ? user.username : 'Người dùng đã rời';
+}
+
+async function topPayload(db: DB, message: Message, key: TopKey, page: number) {
+  const meta = TOP_META[key];
+  const total = topCount(db, key);
+  const maxPage = Math.max(1, Math.ceil(total / PER_PAGE));
+  const p = Math.min(Math.max(0, page), maxPage - 1);
+  const rows = topPage(db, key, p * PER_PAGE, PER_PAGE);
+
+  const lines: string[] = [];
+  for (const [idx, row] of rows.entries()) {
+    const rank = p * PER_PAGE + idx + 1;
+    const badge = rank <= 3 ? MEDALS[rank - 1] : `**${rank}.**`;
+    lines.push(`${badge} ${await displayName(message, row.user_id)} · ${meta.fmt(row.value)}`);
+  }
+
+  const myRank = rankOf(db, key, message.author.id);
+  const myValue = topPage(db, key, Math.max(0, myRank - 1), 1).find((r) => r.user_id === message.author.id);
+  const footer =
+    myRank > 0
+      ? `Bạn: #${myRank} · ${meta.fmt(myValue?.value ?? 0)}   |   Trang ${p + 1}/${maxPage}`
+      : `Bạn chưa có trên bảng này   |   Trang ${p + 1}/${maxPage}`;
+
+  const e = embed(
+    `${meta.emoji} Bảng xếp hạng · ${meta.label}`,
+    lines.length ? lines.join('\n') : '_Chưa có ai trên bảng này._'
+  ).setFooter({ text: footer });
+
+  const nav = buttonRow(
+    new ButtonBuilder().setCustomId('top:prev').setEmoji('◀').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    new ButtonBuilder()
+      .setCustomId('top:next')
+      .setEmoji('▶')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(p >= maxPage - 1)
+  );
+
+  const picker = selectRow(
+    new StringSelectMenuBuilder()
+      .setCustomId('top:board')
+      .setPlaceholder('Chọn bảng')
+      .addOptions(
+        (Object.keys(TOP_META) as TopKey[]).map((k) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(TOP_META[k].label)
+            .setEmoji(TOP_META[k].emoji)
+            .setValue(k)
+            .setDefault(k === key)
+        )
+      )
+  );
+
+  return { embeds: [e], components: [nav, picker] };
+}
+
+export class TopCommand extends Command {
+  public constructor(context: Command.LoaderContext, options: Command.Options) {
+    super(context, { ...options, name: 'top', aliases: ['rank', 'bxh'], description: 'Bảng xếp hạng event' });
+  }
+
+  public override async messageRun(message: Message) {
+    const db = this.container.db;
+    let key: TopKey = 'points';
+    let page = 0;
+
+    const reply = await message.reply(await topPayload(db, message, key, page));
+    const collector = ownerCollector(reply, message.author.id);
+
+    collector.on('collect', async (i) => {
+      if (i.isButton() && i.customId === 'top:prev') page -= 1;
+      else if (i.isButton() && i.customId === 'top:next') page += 1;
+      else if (i.isStringSelectMenu() && i.customId === 'top:board') {
+        key = i.values[0] as TopKey;
+        page = 0;
+      } else return;
+
+      await i.update(await topPayload(db, message, key, page)).catch(() => {});
     });
 
     return reply;

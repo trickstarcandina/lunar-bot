@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb, ensureUser, addMsg, claimBoxes, claimDaily, addBoxes, addVoiceSec, tiersReached, openVoice, closeVoice, flushVoice, resetVoiceSessions, openVoiceIds, openBox, getItems, craft, topPage, topCount, rankOf, valueOf } from './lib/db.js';
 import { ITEMS, ITEM_MAP, rollRarity, rollItem, craftGain, type Rarity } from './lib/items.js';
@@ -351,6 +351,12 @@ t('Sapphire nạp đủ 7 lệnh và 2 listener của bot (C1/C2 regression)', (
   // test spawn đúng CLI `tsx` production dùng, một tiến trình con sạch, để soi
   // đường load piece thật — chứ không giả lập trong tiến trình test hiện tại.
   // Đặt trong repo (không phải /tmp) để probe resolve được node_modules bằng cách đi lên thư mục cha.
+  // Cause 2 của C1 (node --import tsx không bật loader .ts của Sapphire) không đụng
+  // tới thư mục src/, nên pin thẳng vào script start thay vì chỉ dựa vào cái probe
+  // dùng tsx binary trực tiếp bên dưới.
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as { scripts: { start: string } };
+  assert.ok(pkg.scripts.start.startsWith('tsx '), `start script phải chạy qua tsx CLI, đang là: ${pkg.scripts.start}`);
+
   const dir = mkdtempSync(join(process.cwd(), '.sapphire-probe-'));
   const probe = join(dir, 'probe.ts');
   try {

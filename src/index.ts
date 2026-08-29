@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { SapphireClient, LogLevel, container } from '@sapphire/framework';
 import { ChannelType, GatewayIntentBits } from 'discord.js';
-import { openDb, resetVoiceSessions, flushVoice, closeVoice, openVoiceIds, type DB } from './lib/db.js';
+import { openDb, resetVoiceSessions, flushVoice, closeVoice, openVoice, openVoiceIds, type DB } from './lib/db.js';
 import { cfg, isEventActive, loadConfig } from './lib/config.js';
 import { syncVoiceChannel, voiceEligible } from './listeners/voice.js';
 
@@ -72,6 +72,7 @@ function voiceTick(): void {
   for (const id of openVoiceIds(db)) {
     if (!eligible.has(id)) closeVoice(db, id, now);
   }
+  for (const id of eligible) openVoice(db, id, now);
   flushVoice(db, now);
 }
 

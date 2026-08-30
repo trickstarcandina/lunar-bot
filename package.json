@@ -1,0 +1,22 @@
+{
+  "name": "lunar-bot",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "test": "node --import tsx src/selftest.ts"
+  },
+  "dependencies": {
+    "@sapphire/framework": "^5.3.0",
+    "better-sqlite3": "^11.5.0",
+    "discord.js": "^14.16.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

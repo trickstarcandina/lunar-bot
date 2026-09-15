@@ -315,7 +315,7 @@ export class AddBoxCommand extends Command {
 
 export class HelpCommand extends Command {
   public constructor(context: Command.LoaderContext, options: Command.Options) {
-    super(context, { ...options, name: \'help\', aliases: [\'h\', \'trogiup\', \'lenh\'], description: \'Xem danh sách lệnh\' });
+    super(context, { ...options, name: 'help', aliases: ['h', 'trogiup', 'lenh'], description: 'Xem danh sách lệnh' });
   }
 
   public override async messageRun(message: Message, args: Args) {

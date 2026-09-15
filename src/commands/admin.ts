@@ -319,23 +319,23 @@ export class HelpCommand extends Command {
   }
 
   public override async messageRun(message: Message, args: Args) {
-    const prefix = (cfg() as any).prefix ?? \'-\';
-    const query = await args.pick(\'string\').catch(() => null);
-    const allCommands = [...this.container.stores.get(\'commands\').values()];
+    const prefix = (cfg() as any).prefix ?? '-';
+    const query = await args.pick('string').catch(() => null);
+    const allCommands = [...this.container.stores.get('commands').values()];
 
     if (query) {
       const cmd = allCommands.find(c => c.name === query.toLowerCase() || c.aliases.includes(query.toLowerCase()));
       if (!cmd) {
-        return message.reply({ embeds: [embed(\'❌ Không tìm thấy\', `Không có lệnh nào tên \`${query}\`\nGõ \`${prefix}help\` để xem tất cả.`)] });
+        return message.reply({ embeds: [embed('❌ Không tìm thấy', `Không có lệnh nào tên \`${query}\`\nGõ \`${prefix}help\` để xem tất cả.`)] });
       }
       const e = new EmbedBuilder()
         .setColor(0xFFA500)
         .setTitle(`📖 Lệnh: ${prefix}${cmd.name}`)
-        .setDescription(cmd.description || \'Không có mô tả\')
+        .setDescription(cmd.description || 'Không có mô tả')
         .addFields(
-          { name: \'Tên lệnh\', value: `\`${cmd.name}\``, inline: true },
-          { name: \'Aliases\', value: cmd.aliases.length ? cmd.aliases.map(a => `\`${a}\``).join(\', \') : \'Không có\', inline: true },
-          { name: \'Cách dùng\', value: `\`${prefix}${cmd.name}\``, inline: false }
+          { name: 'Tên lệnh', value: `\`${cmd.name}\``, inline: true },
+          { name: 'Aliases', value: cmd.aliases.length ? cmd.aliases.map(a => `\`${a}\``).join(', ') : 'Không có', inline: true },
+          { name: 'Cách dùng', value: `\`${prefix}${cmd.name}\``, inline: false }
         )
         .setFooter({ text: `Yêu cầu bởi ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
       return message.reply({ embeds: [e] });
@@ -343,22 +343,22 @@ export class HelpCommand extends Command {
 
     const e = new EmbedBuilder()
       .setColor(0xFFA500)
-      .setTitle(\'📚 Danh sách lệnh - Event Trung Thu\')
+      .setTitle('📚 Danh sách lệnh - Event Trung Thu')
       .setDescription(`Prefix: \`${prefix}\` • Gõ \`${prefix}help <tên lệnh>\` để xem chi tiết`)
       .setTimestamp()
       .setFooter({ text: `Yêu cầu bởi ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
 
-    const ownerCmds = allCommands.filter(c => [\'cfg\',\'config\',\'setting\',\'addbox\',\'themhop\'].includes(c.name));
-    const generalCmds = allCommands.filter(c => !ownerCmds.includes(c) && c.name !== \'help\');
+    const ownerCmds = allCommands.filter(c => ['cfg','config','setting','addbox','themhop'].includes(c.name));
+    const generalCmds = allCommands.filter(c => !ownerCmds.includes(c) && c.name !== 'help');
 
     if (generalCmds.length) {
-      e.addFields({ name: \'🎮 Người chơi\', value: generalCmds.map(c => `\`${prefix}${c.name}\` - ${c.description}`).join(\'\n\') });
+      e.addFields({ name: '🎮 Người chơi', value: generalCmds.map(c => `\`${prefix}${c.name}\` - ${c.description}`).join('\n') });
     }
     if (generalCmds.length === 0) {
-       e.addFields({ name: \'🎮 Người chơi\', value: `\`${prefix}daily\` - Nhận hộp mỗi ngày\n\`${prefix}me\` - Xem hộp & điểm\n\`${prefix}open\` - Mở hộp gacha` });
+       e.addFields({ name: '🎮 Người chơi', value: `\`${prefix}daily\` - Nhận hộp mỗi ngày\n\`${prefix}me\` - Xem hộp & điểm\n\`${prefix}open\` - Mở hộp gacha` });
     }
-    e.addFields({ name: \'👑 Owner\', value: ownerCmds.map(c => `\`${prefix}${c.name}\` - ${c.description}`).join(\'\n\') });
-    e.addFields({ name: \'❓ Trợ giúp\', value: `\`${prefix}help\` - Xem bảng này` });
+    e.addFields({ name: '👑 Owner', value: ownerCmds.map(c => `\`${prefix}${c.name}\` - ${c.description}`).join('\n') });
+    e.addFields({ name: '❓ Trợ giúp', value: `\`${prefix}help\` - Xem bảng này` });
 
     return message.reply({ embeds: [e] });
   }

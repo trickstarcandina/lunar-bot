@@ -10,7 +10,7 @@ import { closeVoice, openVoice, type DB } from '../lib/db.js';
 export function voiceEligible(channel: VoiceBasedChannel, member: GuildMember): boolean {
   if (member.user.bot) return false;
   const humans = channel.members.filter((m) => !m.user.bot);
-  if (humans.size < 2) return false;
+  // if (humans.size < 2) return false;
   return !member.voice.selfDeaf && !member.voice.deaf;
 }
 

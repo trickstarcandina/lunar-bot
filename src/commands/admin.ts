@@ -319,7 +319,7 @@ export class HelpCommand extends Command {
   }
 
   public override async messageRun(message: Message, args: Args) {
-    const prefix = (cfg() as any).prefix ?? '-';
+    const prefix = process.env.PREFIX ?? '-';
     const query = await args.pick('string').catch(() => null);
     const allCommands = [...this.container.stores.get('commands').values()];
 
